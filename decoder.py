@@ -8,9 +8,23 @@ class VAE_AttentionBlock(nn.Module):
         super().__init__()
 
         self.groupnorm = nn.GroupNorm(32, channs)
+        self.attention = SelfAttention(1, channs)
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        residue = x
+        n, c, h, w = x.shape
+
+        # Reshaping to use attention
+        x = x.view(n, c, h * w)
+        x = x.transpose(-1, -2)
+
+        x = self.attention(x)
+
+        x = x.transpose(-1, -2)
+        x = x.view(n, c, h, w)
+
+        return  x + residue
         
-
-
 
 class VAE_ResBlock(nn.Module):
     
@@ -28,19 +42,19 @@ class VAE_ResBlock(nn.Module):
         else:
             self.res_layer = nn.Conv2d(in_chann, out_chann, kernel_size=1, padding=0)
         
-        def forward(self, x: torch.Tensor) -> torch.Tensor:
-            residue = x
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        residue = x
 
-            x = self.groupnorm_1(x)
-            x = F.silu(x)
+        x = self.groupnorm_1(x)
+        x = F.silu(x)
 
-            x = self.conv_1(x)
+        x = self.conv_1(x)
 
-            x = self.groupnorm_2(x)
-            x = F.silu(x)
+        x = self.groupnorm_2(x)
+        x = F.silu(x)
 
-            x = self.conv_2(x)
+        x = self.conv_2(x)
 
-            return x + self.res_layer(residue)
+        return x + self.res_layer(residue)
 
 
