@@ -46,7 +46,7 @@ class VAE_Encoder(nn.Sequential):
         
         # (4, H/8, W/8) - > [(2, H/8, W/8), (2, H/8, W/8)]
         mean, log_var = torch.chunk(x, 2, dim=1)
-        log_var = torch.clamp(log_var. -30, 20)
+        log_var = torch.clamp(log_var, -30, 20)
         
         var = log_var.exp()
         std = var.sqrt()
