@@ -65,9 +65,73 @@ class UNet_ResidualBlock(nn.Module):
 
 class UNet_AttentionBlock(nn.Module):
     
-    def __init__(self) -> None:
+    def __init__(self, n_head: int, n_emb: int, dim_context=768):
         super().__init__()
-        pass
+        channels = n_head * n_emb
+
+        self.group_norm = nn.GroupNorm(32, channels, eps=1e-6)
+        self.conv_input = nn.Conv2d(channels, channels, kernel_size=1, padding=0)
+
+        self.layernorm_1 = nn.LayerNorm(channels)
+        self.attention_1 = SelfAttention(n_head, channels, in_proj_bias=False)
+        
+        self.layernorm_2 = nn.LayerNorm(channels)
+        self.attention_2 = CrossAttention(n_head, channels, dim_context, in_proj_bias=False)
+        
+        self.layernorm_3 = nn.LayerNorm(channels)
+       
+        self.linear_geglu_1 = nn.Linear(channels, 4 * channels)
+        self.linear_geglu_2 = nn.Linear(4 * channels, channels)
+
+        self.conv_output = nn.Conv2d(channels, channels, kernel_size=1, padding=0)
+
+    def forward(self, x: torch.Tensor, context: torch.Tensor) -> torch.Tensor:
+        # x: (Features, H, W)
+        # context: (Seq_Len, Dim)
+
+        residue_long = x
+
+        x = self.group_norm(x)
+        
+        x = self.conv_input(x)
+
+        n, c, h, w = x.shape
+
+        x = x.view(n, c, h * w)
+        x = x.transpose(-1, -2)
+
+        # Normalization + Self Attention with skip connection
+
+        residue_short = x
+
+        x = self.layernorm_1(x)
+        x = self.attention_1(x)
+        x += residue_short
+
+        residue_short = x
+
+        # Normalization + Cross Attention with skip connection
+        x = self.layernorm_2(x)
+        self.attention_2(x, context)
+        x += residue_short
+
+        residue_short = x
+
+        # Normalization + FF with GeGLU and skip connection
+        x = self.layernorm_3(x)
+        x, gate = self.linear_geglu_1(x).chunk(2, dim=-1)
+        x = x * F.gelu(gate)
+        x = self.linear_geglu_2(x)
+
+        x += residue_short
+
+        x = x.transpose(-1, -2)
+
+        x = x.view(n, c, h, w)
+
+        x = self.conv_output(x) + residue_long
+
+        return x
 
 
 class UpSample(nn.Module):
